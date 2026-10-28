@@ -1,0 +1,716 @@
+<title>팜시그널 농산물 시세</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: 모바일 우선 앱 셸 — 상단 기준일 바 + 단일 컬럼 카드 흐름 + 하단 탭바. 넓은 화면은 가운데 640px 칼럼. */
+:root {
+  --bg: #f3f5f1;
+  --surface: #ffffff;
+  --surface-2: #e9eee6;
+  --line: #d5ddd1;
+  --fg: #16231a;
+  --fg-2: #48584d;
+  --fg-3: #75837a;
+  --brand: #1d5b39;
+  --brand-ink: #ffffff;
+  --accent: #9a6410;          /* 예측(오커) */
+  --band: rgba(154, 100, 16, .16);
+  --normal: #8a9a8f;          /* 평년선 */
+  --up: #cf2f36;              /* 상승: 국내 시세 관례상 빨강 */
+  --down: #2462c8;            /* 하락: 파랑 */
+  --up-soft: rgba(207, 47, 54, .1);
+  --down-soft: rgba(36, 98, 200, .1);
+  --good-soft: rgba(29, 91, 57, .1);
+  --accent-soft: rgba(154, 100, 16, .12);
+  --shadow: 0 1px 2px rgba(22, 35, 26, .06), 0 2px 10px rgba(22, 35, 26, .04);
+  --f-display: "Gowun Batang", "Nanum Myeongjo", "AppleMyungjo", serif;
+  --f-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --f-num: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1511; --surface: #172019; --surface-2: #202a22; --line: #2d3a30;
+    --fg: #e7eee8; --fg-2: #a8b6ab; --fg-3: #77857b; --brand: #6fcf97; --brand-ink: #0f1511;
+    --accent: #e3ad52; --band: rgba(227, 173, 82, .18); --normal: #6f7f74;
+    --up: #ff6b6e; --down: #5d9dff; --up-soft: rgba(255, 107, 110, .13); --down-soft: rgba(93, 157, 255, .13);
+    --good-soft: rgba(111, 207, 151, .12); --accent-soft: rgba(227, 173, 82, .13);
+    --shadow: none; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1511; --surface: #172019; --surface-2: #202a22; --line: #2d3a30;
+  --fg: #e7eee8; --fg-2: #a8b6ab; --fg-3: #77857b; --brand: #6fcf97; --brand-ink: #0f1511;
+  --accent: #e3ad52; --band: rgba(227, 173, 82, .18); --normal: #6f7f74;
+  --up: #ff6b6e; --down: #5d9dff; --up-soft: rgba(255, 107, 110, .13); --down-soft: rgba(93, 157, 255, .13);
+  --good-soft: rgba(111, 207, 151, .12); --accent-soft: rgba(227, 173, 82, .13);
+  --shadow: none; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+  word-break: keep-all; overflow-wrap: anywhere;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--bg); }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
+.num { font-family: var(--f-num); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.wrap { max-width: 640px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* 상단 바 */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: var(--bg); border-bottom: 1px solid var(--line); }
+.top .wrap { display: flex; align-items: center; gap: 10px; padding-block: 10px; min-height: 54px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -.02em; font-size: 17px; }
+.brand svg { flex: none; }
+.asof { margin-left: auto; text-align: right; font-size: 12px; color: var(--fg-3); line-height: 1.3; }
+.asof b { color: var(--fg-2); font-weight: 600; display: block; font-size: 13px; }
+.back { display: inline-flex; align-items: center; gap: 2px; border: 0; background: none; padding: 6px 8px 6px 0; color: var(--fg-2); font-weight: 600; }
+
+.demo { margin: 12px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); color: var(--fg-2); font-size: 13px; line-height: 1.45; }
+.demo b { color: var(--accent); }
+
+main { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+.view { display: flex; flex-direction: column; gap: 14px; padding-block: 14px 8px; }
+
+/* 카드 · 섹션 */
+.card { background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow); border: 1px solid var(--line); padding: 16px; min-width: 0; }
+.sec-h { display: flex; align-items: baseline; gap: 8px; margin: 0 0 10px; }
+.sec-h h2 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -.02em; }
+.sec-h .sub { color: var(--fg-3); font-size: 12px; }
+.sec-h .more { margin-left: auto; font-size: 13px; color: var(--brand); font-weight: 600; text-decoration: none; background: none; border: 0; padding: 0; }
+.hint { color: var(--fg-3); font-size: 12px; margin: 10px 0 0; }
+
+/* 히어로(오늘의 시장) */
+.hero h1 { font-family: var(--f-display); font-size: 26px; line-height: 1.25; margin: 2px 0 6px; letter-spacing: -.01em; text-wrap: balance; }
+.hero p { margin: 0; color: var(--fg-2); font-size: 14px; }
+.eyebrow { font-size: 12px; color: var(--fg-3); letter-spacing: .04em; font-weight: 600; }
+
+/* 세그먼트 · 칩 */
+.seg { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; gap: 2px; }
+.seg button { border: 0; background: none; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--fg-2); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: var(--shadow); }
+.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { flex: none; border: 1px solid var(--line); background: var(--surface); padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--fg-2); }
+.chip[aria-pressed="true"] { background: var(--fg); border-color: var(--fg); color: var(--bg); }
+
+/* 등락 */
+.up { color: var(--up); }
+.down { color: var(--down); }
+.flat { color: var(--fg-3); }
+.delta { font-family: var(--f-num); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+
+/* 부류 지수 */
+.cats { display: grid; gap: 2px; }
+.cat-row { display: grid; grid-template-columns: 64px 1fr 62px; align-items: center; gap: 10px; padding: 7px 0; font-size: 14px; }
+.cat-row .nm { font-weight: 600; }
+.dbar { position: relative; height: 22px; }
+.dbar .axis { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.dbar .fill { position: absolute; top: 4px; height: 14px; border-radius: 4px; }
+.cat-row .v { text-align: right; font-size: 13px; }
+.cat-legend { display: flex; justify-content: space-between; font-size: 11px; color: var(--fg-3); padding: 0 72px 0 74px; }
+
+/* 품목 행 */
+.list { display: flex; flex-direction: column; }
+.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); text-decoration: none; color: inherit; }
+.row:first-child { border-top: 0; }
+.row .t { min-width: 0; }
+.row .nm { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.row .meta { color: var(--fg-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .r { text-align: right; }
+.row .p { font-family: var(--f-num); font-weight: 600; font-size: 15px; font-variant-numeric: tabular-nums; }
+.row .p small { font-family: var(--f-body); font-weight: 400; color: var(--fg-3); font-size: 11px; margin-left: 2px; }
+.row .s { font-size: 12px; display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+.tag { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 5px; background: var(--surface-2); color: var(--fg-2); }
+.pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+.pill.sell, .pill.sell_soft { background: var(--good-soft); color: var(--brand); }
+.pill.hold, .pill.hold_soft { background: var(--accent-soft); color: var(--accent); }
+.pill.neutral { background: var(--surface-2); color: var(--fg-2); }
+.pill.none, .pill.off { background: var(--surface-2); color: var(--fg-3); }
+
+/* 신호 카드 */
+.sig { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-top: 1px solid var(--line); text-decoration: none; color: inherit; }
+.sig:first-of-type { border-top: 0; padding-top: 2px; }
+.sig .h { display: flex; align-items: center; gap: 8px; }
+.sig .h .nm { font-weight: 600; }
+.sig .h .pill { margin-left: auto; }
+.sig .why { color: var(--fg-2); font-size: 13px; }
+
+/* 위치 바(1년 범위) */
+.range { position: relative; height: 6px; border-radius: 3px; background: var(--surface-2); }
+.range i { position: absolute; top: -4px; width: 14px; height: 14px; border-radius: 50%; background: var(--fg); border: 3px solid var(--surface); transform: translateX(-50%); box-shadow: 0 0 0 1px var(--line); }
+.range-l { display: flex; justify-content: space-between; font-size: 12px; color: var(--fg-3); margin-top: 8px; }
+
+/* 상세 */
+.dt-h .kind { color: var(--fg-3); font-size: 13px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.dt-h h1 { font-family: var(--f-display); font-size: 30px; margin: 4px 0 2px; letter-spacing: -.01em; display: flex; align-items: center; gap: 10px; }
+.star { margin-left: auto; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; color: var(--fg-2); display: inline-flex; gap: 6px; align-items: center; }
+.star[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.big { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.big .p { font-family: var(--f-num); font-size: 34px; font-weight: 600; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.big .u { color: var(--fg-3); font-size: 14px; }
+.chg-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 14px; }
+.chg-grid div { background: var(--surface-2); border-radius: 10px; padding: 8px 4px; text-align: center; min-width: 0; }
+.chg-grid span { display: block; font-size: 11px; color: var(--fg-3); }
+.chg-grid b { font-size: 13px; }
+
+.chart-wrap { position: relative; margin: 6px -4px 0; touch-action: pan-y; }
+.chart-wrap svg { display: block; width: 100%; overflow: visible; }
+.chart-wrap text { font-family: var(--f-num); font-size: 10.5px; fill: var(--fg-3); }
+.tip { position: absolute; top: 0; pointer-events: none; background: var(--fg); color: var(--bg); border-radius: 8px; padding: 6px 9px; font-size: 12px; line-height: 1.45; white-space: nowrap; transform: translateX(-50%); z-index: 2; }
+.tip b { font-family: var(--f-num); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--fg-2); margin-top: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 16px; height: 0; border-top: 2px solid; display: inline-block; }
+.legend i.band { height: 10px; border: 0; background: var(--band); border-radius: 2px; }
+
+.fc-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.fc-table th { text-align: left; font-weight: 500; color: var(--fg-3); font-size: 12px; padding: 0 0 6px; }
+.fc-table th:not(:first-child), .fc-table td:not(:first-child) { text-align: right; }
+.fc-table td { padding: 9px 0; border-top: 1px solid var(--line); }
+.fc-table td.num { font-weight: 600; }
+.fc-table .rg { color: var(--fg-3); font-size: 12px; font-family: var(--f-num); }
+
+.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.metric { background: var(--surface-2); border-radius: 12px; padding: 12px; min-width: 0; }
+.metric .k { font-size: 12px; color: var(--fg-3); }
+.metric .v { font-size: 19px; font-weight: 600; font-family: var(--f-num); margin-top: 2px; }
+.metric .d { font-size: 12px; color: var(--fg-2); margin-top: 2px; }
+
+.reasons { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.reasons li { font-size: 14px; color: var(--fg-2); padding-left: 14px; position: relative; }
+.reasons li::before { content: ""; position: absolute; left: 2px; top: .62em; width: 5px; height: 5px; border-radius: 50%; background: var(--fg-3); }
+.sig-big { display: flex; align-items: center; gap: 10px; }
+.sig-big .pill { font-size: 14px; padding: 6px 12px; }
+
+.months { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; align-items: end; height: 120px; margin-top: 8px; }
+.months div { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; gap: 4px; min-width: 0; }
+.months i { width: 100%; max-width: 22px; border-radius: 4px 4px 0 0; background: var(--surface-2); display: block; }
+.months i.hi { background: var(--up); opacity: .75; }
+.months i.lo { background: var(--down); opacity: .75; }
+.months i.now { outline: 2px solid var(--fg); outline-offset: 1px; }
+.months span { font-size: 10.5px; color: var(--fg-3); font-family: var(--f-num); }
+
+.search { width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 11px 14px 11px 38px; font-size: 15px; background-image: none; }
+.search-box { position: relative; }
+.search-box svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--fg-3); }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.toolbar select { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 7px 10px; font-size: 13px; margin-left: auto; }
+
+.empty { text-align: center; padding: 28px 12px; color: var(--fg-3); font-size: 14px; }
+.empty b { display: block; color: var(--fg); font-size: 16px; margin-bottom: 4px; }
+.disclaimer { font-size: 12px; color: var(--fg-3); line-height: 1.6; margin: 4px 2px 0; }
+.method h3 { font-size: 15px; margin: 18px 0 6px; }
+.method h3:first-child { margin-top: 0; }
+.method p, .method li { font-size: 14px; color: var(--fg-2); max-width: 62ch; }
+.method ul { padding-left: 18px; margin: 6px 0; }
+.trust { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.trust div { min-width: 0; }
+.trust b { display: block; font-family: var(--f-num); font-size: 18px; }
+.trust span { font-size: 12px; color: var(--fg-3); }
+
+/* 탭바 */
+.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.tabs .wrap { display: grid; grid-template-columns: repeat(4, 1fr); }
+.tabs a { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 9px 0 8px; font-size: 11px; font-weight: 600; color: var(--fg-3); text-decoration: none; }
+.tabs a[aria-current="page"] { color: var(--brand); }
+
+.skel { background: linear-gradient(90deg, var(--surface-2), var(--line), var(--surface-2)); background-size: 200% 100%; animation: sh 1.2s infinite; border-radius: 8px; height: 16px; }
+@keyframes sh { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
+@media (min-width: 560px) { .hero h1 { font-size: 30px; } }
+</style>
+
+<header class="top">
+  <div class="wrap" id="topbar">
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M5 16l4-5 3 3 4-6 3 4" stroke="var(--brand)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M16 8c0-2.5 1.5-4 4-4 0 2.5-1.5 4-4 4z" fill="var(--brand)"/></svg>
+      팜시그널
+    </div>
+    <div class="asof" id="asof"><b>&nbsp;</b>불러오는 중</div>
+  </div>
+</header>
+
+<main class="wrap" id="app">
+  <div class="view"><div class="card"><div class="skel" style="width:60%"></div><div class="skel" style="margin-top:12px"></div><div class="skel" style="margin-top:8px;width:80%"></div></div></div>
+</main>
+
+<nav class="tabs" aria-label="메뉴">
+  <div class="wrap">
+    <a href="#home" data-tab="home"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>오늘</a>
+    <a href="#market" data-tab="market"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>시세</a>
+    <a href="#watch" data-tab="watch"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg>관심</a>
+    <a href="#method" data-tab="method"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>분석 방법</a>
+  </div>
+</nav>
+
+<script>
+(() => {
+  "use strict";
+  const DATA = "data/";
+  const app = document.getElementById("app");
+  const state = { meta: null, overview: null, catalog: null, cache: new Map(),
+                  cls: "02", cat: "all", sort: "vs_normal", q: "", range: 250, moversTab: "up" };
+
+  // ---------- 저장(관심 품목) ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem("fs:" + k); return v ? JSON.parse(v) : d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem("fs:" + k, JSON.stringify(v)); } catch {} }
+  };
+  let watch = new Set(store.get("watch", []));
+  Object.assign(state, store.get("prefs", {}));
+  const savePrefs = () => store.set("prefs", { cls: state.cls, sort: state.sort, range: state.range });
+
+  // ---------- 포맷 ----------
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const won = v => v == null ? "–" : Math.round(v).toLocaleString("ko-KR");
+  const pctTxt = (v, d = 1) => v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v * 100).toFixed(d) + "%";
+  const dir = v => v == null || Math.abs(v) < 0.0005 ? "flat" : v > 0 ? "up" : "down";
+  const arrow = v => v == null || Math.abs(v) < 0.0005 ? "" : v > 0 ? "▲" : "▼";
+  const delta = (v, d) => `<span class="delta ${dir(v)}">${arrow(v)}${v == null ? "–" : (Math.abs(v * 100)).toFixed(d ?? 1) + "%"}</span>`;
+  const DOW = ["일", "월", "화", "수", "목", "금", "토"];
+  const fmtDate = (iso, withDow) => { const d = new Date(iso + "T00:00:00"); return `${d.getMonth() + 1}월 ${d.getDate()}일` + (withDow ? ` (${DOW[d.getDay()]})` : ""); };
+  const cleanKind = s => String(s || "").replace(/\([^)]*\)$/, "").trim();
+  const label = s => { const k = cleanKind(s.kind); return k && k !== s.item ? `${s.item} <span class="tag">${esc(k)}</span>` : esc(s.item); };
+  const pill = s => `<span class="pill ${esc(s.signal)}">${esc(s.signal_label)}</span>`;
+
+  async function getJSON(path) {
+    if (state.cache.has(path)) return state.cache.get(path);
+    const res = await fetch(DATA + path);
+    if (!res.ok) throw new Error(`${path}: ${res.status}`);
+    const data = await res.json();
+    state.cache.set(path, data);
+    return data;
+  }
+
+  // ---------- 라우팅 ----------
+  function route() {
+    const h = location.hash.replace(/^#/, "") || "home";
+    const tab = h.startsWith("item-") ? "market" : h;
+    document.querySelectorAll(".tabs a").forEach(a => {
+      if (a.dataset.tab === tab) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    });
+    if (h.startsWith("item-")) return renderItem(h.slice(5));
+    if (h === "market") return renderMarket();
+    if (h === "watch") return renderWatch();
+    if (h === "method") return renderMethod();
+    return renderHome();
+  }
+
+  function setTop(html) {
+    document.getElementById("topbar").innerHTML = html;
+  }
+  const defaultTop = () => {
+    setTop(`<div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M5 16l4-5 3 3 4-6 3 4" stroke="var(--brand)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M16 8c0-2.5 1.5-4 4-4 0 2.5-1.5 4-4 4z" fill="var(--brand)"/></svg>팜시그널</div>
+      <div class="asof"><b>${fmtDate(state.meta.asof, true)} 기준</b>KAMIS 조사가격</div>`);
+  };
+  const demoNote = () => state.meta.demo
+    ? `<div class="demo"><b>데모 데이터</b> · 화면과 분석 기능을 보여주기 위한 합성 가격이에요. KAMIS 인증키를 연결하면 매일 실제 조사가격으로 바뀝니다.</div>` : "";
+
+  // ---------- 홈 ----------
+  function renderHome() {
+    defaultTop();
+    const ov = state.overview;
+    const cls = state.cls;
+    const cats = ov.categories.filter(c => c.cls === cls);
+    const allVn = cats.map(c => c.vs_normal).filter(v => v != null);
+    const maxAbs = Math.max(0.15, ...allVn.map(Math.abs));
+    const fresh = state.catalog.filter(s => s.cls === cls && s.stale_days != null && s.stale_days <= 7);
+    const up = fresh.filter(s => (s.chg_1w ?? 0) > 0.005).length;
+    const down = fresh.filter(s => (s.chg_1w ?? 0) < -0.005).length;
+    const med = median(fresh.map(s => s.vs_normal).filter(v => v != null));
+    const headline = med == null ? "오늘의 농산물 시세" :
+      Math.abs(med) < 0.03 ? "전반적으로 평년과 비슷한 시세예요" :
+      med > 0 ? `전반적으로 평년보다 ${Math.round(med * 100)}% 높은 시세예요` : `전반적으로 평년보다 ${Math.round(-med * 100)}% 낮은 시세예요`;
+
+    const sellList = uniq(ov.sell_signals.filter(s => s.cls === cls)).slice(0, 5);
+    const holdList = uniq(ov.hold_signals.filter(s => s.cls === cls)).slice(0, 4);
+    const movers = uniq(state.moversTab === "up" ? ov.gainers_1w : ov.losers_1w);
+    const ev = state.meta.evaluation;
+
+    app.innerHTML = `<div class="view">
+      ${demoNote()}
+      <section class="hero">
+        <div class="eyebrow">${cls === "02" ? "도매" : "소매"} · ${fresh.length}개 품목</div>
+        <h1>${headline}</h1>
+        <p>지난주보다 <span class="up">${up}개 올랐고</span>, <span class="down">${down}개 내렸어요</span>.</p>
+        <div style="margin-top:12px">${segCls()}</div>
+      </section>
+
+      <section class="card">
+        <div class="sec-h"><h2>부류별 평년 대비</h2><span class="sub">품목 중앙값</span></div>
+        <div class="cats">
+          ${cats.map(c => {
+            const v = c.vs_normal ?? 0, w = Math.min(50, Math.abs(v) / maxAbs * 50);
+            const color = v >= 0 ? "var(--up)" : "var(--down)";
+            return `<div class="cat-row"><span class="nm">${esc(c.cat_name)}</span>
+              <div class="dbar" role="img" aria-label="${esc(c.cat_name)} 평년 대비 ${pctTxt(c.vs_normal)}"><span class="axis"></span><span class="fill" style="background:${color};opacity:.8;${v >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%`}"></span></div>
+              <span class="v">${delta(c.vs_normal)}</span></div>`;
+          }).join("")}
+        </div>
+        <div class="cat-legend"><span>평년보다 낮음</span><span>높음</span></div>
+      </section>
+
+      <section class="card">
+        <div class="sec-h"><h2>출하 신호</h2><span class="sub">생산자용 참고</span><a class="more" href="#method">기준 보기</a></div>
+        ${sellList.length + holdList.length === 0 ? `<div class="empty"><b>뚜렷한 신호가 없어요</b>대부분 품목이 관망 구간이에요.</div>` :
+          [...sellList, ...holdList].map(s => `<a class="sig" href="#item-${esc(s.id)}">
+            <div class="h"><span class="nm">${label(s)}</span><span class="tag">${esc(s.rank)}</span>${pill(s)}</div>
+            <div class="why">평년 대비 ${delta(s.vs_normal, 0)} · 4주 뒤 예상 ${delta(s.fc_chg_4w)} · 상승 확률 <span class="num">${s.p_up_4w == null ? "–" : Math.round(s.p_up_4w * 100) + "%"}</span></div>
+          </a>`).join("")}
+      </section>
+
+      <section class="card">
+        <div class="sec-h"><h2>이번 주 가격 변동</h2><span class="sub">도매 · 1주 전 대비</span></div>
+        <div class="seg" role="group" aria-label="오른/내린 품목">
+          <button data-mv="up" aria-pressed="${state.moversTab === "up"}">많이 오른</button>
+          <button data-mv="down" aria-pressed="${state.moversTab === "down"}">많이 내린</button>
+        </div>
+        <div class="list" style="margin-top:6px">${movers.slice(0, 6).map(rowHTML).join("")}</div>
+      </section>
+
+      ${ev ? `<section class="card">
+        <div class="sec-h"><h2>예측은 얼마나 맞았나</h2><span class="sub">과거 ${ev.n.toLocaleString()}회 검증</span><a class="more" href="#method">자세히</a></div>
+        <div class="trust">
+          <div><b>${Math.round(ev.coverage_80_4w * 100)}%</b><span>4주 예측 범위 안에 실제 가격이 든 비율 (목표 80%)</span></div>
+          <div><b>${(ev.mape_4w * 100).toFixed(1)}%</b><span>4주 예측 평균 오차</span></div>
+          <div><b>${ev.direction_hit_4w == null ? "–" : Math.round(ev.direction_hit_4w * 100) + "%"}</b><span>오를지 내릴지 맞힌 비율</span></div>
+        </div>
+      </section>` : ""}
+      <p class="disclaimer">자료: ${esc(state.meta.source)}. 예측과 출하 신호는 과거 가격 패턴에 기반한 참고 정보이며 판매·투자 결정을 보장하지 않습니다.</p>
+    </div>`;
+    bindSegCls(renderHome);
+    app.querySelectorAll("[data-mv]").forEach(b => b.onclick = () => { state.moversTab = b.dataset.mv; renderHome(); });
+  }
+
+  const segCls = () => `<div class="seg" role="group" aria-label="도매/소매">
+      <button data-cls="02" aria-pressed="${state.cls === "02"}">도매</button>
+      <button data-cls="01" aria-pressed="${state.cls === "01"}">소매</button></div>`;
+  const bindSegCls = fn => app.querySelectorAll("[data-cls]").forEach(b => b.onclick = () => { state.cls = b.dataset.cls; savePrefs(); fn(); });
+
+  function rowHTML(s) {
+    return `<a class="row" href="#item-${esc(s.id)}">
+      <div class="t"><div class="nm">${label(s)}${watch.has(s.id) ? `<span aria-label="관심" style="color:var(--accent)">★</span>` : ""}</div>
+        <div class="meta">${esc(s.cls === "02" ? "도매" : "소매")} · ${esc(s.rank)} · ${esc(s.unit)}${s.cat_name ? " · " + esc(s.cat_name) : ""}</div></div>
+      <div class="r"><div class="p">${won(s.price)}<small>원</small></div>
+        <div class="s">${delta(s.chg_1w)}</div></div>
+    </a>`;
+  }
+
+  // ---------- 시세 목록 ----------
+  const SORTS = {
+    vs_normal: ["평년 대비 높은 순", s => -(s.vs_normal ?? -9)],
+    chg_1w: ["주간 상승률 순", s => -(s.chg_1w ?? -9)],
+    chg_1w_down: ["주간 하락률 순", s => (s.chg_1w ?? 9)],
+    fc_chg_4w: ["4주 상승 예상 순", s => -(s.fc_chg_4w ?? -9)],
+    vol_weekly: ["변동성 큰 순", s => -(s.vol_weekly ?? -9)],
+    name: ["이름순", null],
+  };
+  function renderMarket() {
+    defaultTop();
+    const cats = [["all", "전체"], ...[...new Set(state.catalog.map(s => s.cat + "|" + s.cat_name))].sort().map(x => x.split("|"))];
+    app.innerHTML = `<div class="view">
+      ${demoNote()}
+      <div class="search-box"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="q" class="search" type="search" placeholder="품목 검색 (예: 토마토, 양파)" value="${esc(state.q)}" autocomplete="off" aria-label="품목 검색"></div>
+      <div class="chips" role="group" aria-label="부류">${cats.map(([k, n]) => `<button class="chip" data-cat="${esc(k)}" aria-pressed="${state.cat === k}">${esc(n)}</button>`).join("")}</div>
+      <div class="toolbar">${segCls()}
+        <select id="sort" aria-label="정렬">${Object.entries(SORTS).map(([k, [n]]) => `<option value="${k}" ${state.sort === k ? "selected" : ""}>${n}</option>`).join("")}</select></div>
+      <section class="card" style="padding-block:4px"><div class="list" id="mk-list"></div></section>
+      <p class="disclaimer">조사가 끊긴 비수기 품목은 목록 아래쪽에 모아 보여줘요.</p>
+    </div>`;
+    const draw = () => {
+      const q = state.q.trim();
+      let rows = state.catalog.filter(s => s.cls === state.cls && (state.cat === "all" || s.cat === state.cat) &&
+        (!q || (s.item + " " + s.kind).includes(q)));
+      const [, key] = SORTS[state.sort] || SORTS.vs_normal;
+      rows.sort((a, b) => {
+        const sa = a.stale_days > 14, sb = b.stale_days > 14;
+        if (sa !== sb) return sa ? 1 : -1;
+        return key ? key(a) - key(b) : a.item.localeCompare(b.item, "ko");
+      });
+      document.getElementById("mk-list").innerHTML = rows.length ? rows.map(s => {
+        const extra = state.sort === "vs_normal" ? `<span class="flat">평년</span>${delta(s.vs_normal, 0)}`
+          : state.sort === "fc_chg_4w" ? `<span class="flat">4주</span>${delta(s.fc_chg_4w)}`
+          : state.sort === "vol_weekly" ? `<span class="flat">변동</span><span class="delta flat">±${s.vol_weekly == null ? "–" : (s.vol_weekly * 100).toFixed(1) + "%"}</span>` : "";
+        return rowHTML(s).replace(`<div class="s">`, `<div class="s">${extra}`).replace(`</div></div>\n    </a>`, `</div></div>\n    </a>`)
+          .replace(`<div class="meta">`, `<div class="meta">${s.stale_days > 14 ? "조사 중단 · " : ""}`);
+      }).join("") : `<div class="empty"><b>찾는 품목이 없어요</b>다른 이름이나 부류로 찾아보세요.</div>`;
+    };
+    draw();
+    const qi = document.getElementById("q");
+    qi.oninput = () => { state.q = qi.value; draw(); };
+    document.getElementById("sort").onchange = e => { state.sort = e.target.value; savePrefs(); draw(); };
+    app.querySelectorAll("[data-cat]").forEach(b => b.onclick = () => { state.cat = b.dataset.cat; app.querySelectorAll("[data-cat]").forEach(x => x.setAttribute("aria-pressed", x === b)); draw(); });
+    app.querySelectorAll("[data-cls]").forEach(b => b.onclick = () => { state.cls = b.dataset.cls; savePrefs(); app.querySelectorAll("[data-cls]").forEach(x => x.setAttribute("aria-pressed", x === b)); draw(); });
+  }
+
+  // ---------- 관심 ----------
+  function renderWatch() {
+    defaultTop();
+    const rows = state.catalog.filter(s => watch.has(s.id));
+    app.innerHTML = `<div class="view">
+      <section class="card" style="padding-block:4px">
+        ${rows.length ? `<div class="list">${rows.map(s => rowHTML(s).replace(`<div class="s">`, `<div class="s">${pill(s)}`)).join("")}</div>` :
+        `<div class="empty"><b>관심 품목이 아직 없어요</b>재배하거나 출하 예정인 품목의 상세 화면에서 ‘관심’을 누르면 여기에 모여요.</div>
+         <div style="padding:0 0 12px;text-align:center"><a class="more" style="color:var(--brand);font-weight:600" href="#market">시세에서 품목 찾기</a></div>`}
+      </section>
+    </div>`;
+  }
+
+  // ---------- 상세 ----------
+  async function renderItem(id) {
+    setTop(`<button class="back" id="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>뒤로</button>
+      <div class="asof"><b>${fmtDate(state.meta.asof, true)} 기준</b>KAMIS 조사가격</div>`);
+    document.getElementById("back").onclick = () => history.length > 1 ? history.back() : (location.hash = "#market");
+    app.innerHTML = `<div class="view"><div class="card"><div class="skel" style="width:40%"></div><div class="skel" style="margin-top:12px;height:30px;width:60%"></div><div class="skel" style="margin-top:16px;height:200px"></div></div></div>`;
+    let d;
+    try { d = await getJSON(`series/${id}.json`); }
+    catch { app.innerHTML = `<div class="view"><div class="card empty"><b>품목 정보를 불러오지 못했어요</b>목록에서 다시 선택해 주세요.</div></div>`; return; }
+    if (location.hash !== "#item-" + id) return;
+    const fc = d.forecast, sig = d.signal_detail, acc = fc && fc.accuracy, vol = d.volatility || {};
+    const stale = d.stale_days > 14;
+    const pos = d.position_1y;
+    const fcRow = (i, name) => {
+      if (!fc) return "";
+      const c = fc.center[i], ch = c / d.price - 1;
+      return `<tr><td>${name} <span class="flat" style="font-size:12px">${fmtDate(fc.dates[i])}</span></td><td class="num">${won(c)}원</td><td>${delta(ch)}</td><td class="rg">${won(fc.lo80[i])}~${won(fc.hi80[i])}</td></tr>`;
+    };
+    const season = d.seasonality;
+    const curMonth = new Date(state.meta.asof + "T00:00:00").getMonth() + 1;
+
+    app.innerHTML = `<div class="view">
+      <section class="card dt-h">
+        <div class="kind"><span>${esc(d.cat_name)}</span>·<span>${esc(d.cls_name)}</span>·<span>${esc(d.rank)}</span>${cleanKind(d.kind) && cleanKind(d.kind) !== d.item ? `·<span>${esc(cleanKind(d.kind))}</span>` : ""}</div>
+        <h1>${esc(d.item)}<button class="star" id="star" aria-pressed="${watch.has(d.id)}">${watch.has(d.id) ? "★ 관심" : "☆ 관심"}</button></h1>
+        <div class="big"><span class="p">${won(d.price)}원</span><span class="u">/ ${esc(d.unit)}</span></div>
+        <div class="flat" style="font-size:12px">${fmtDate(d.date, true)} 조사${stale ? ` · <b class="up">${d.stale_days}일째 조사 없음</b>` : ""}</div>
+        <div class="chg-grid">
+          <div><span>전일</span><b>${delta(d.chg_1d)}</b></div>
+          <div><span>1주</span><b>${delta(d.chg_1w)}</b></div>
+          <div><span>1개월</span><b>${delta(d.chg_1m)}</b></div>
+          <div><span>1년</span><b>${delta(d.chg_1y)}</b></div>
+          <div><span>평년</span><b>${delta(d.vs_normal)}</b></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="sec-h"><h2>가격 추이와 4주 예측</h2>
+          <div class="seg" style="margin-left:auto" role="group" aria-label="기간">
+            ${[[60, "3개월"], [250, "1년"], [520, "2년"]].map(([n, t]) => `<button data-rg="${n}" aria-pressed="${state.range === n}">${t}</button>`).join("")}
+          </div></div>
+        <div class="chart-wrap" id="chart"></div>
+        <div class="legend">
+          <span><i style="border-color:var(--fg)"></i>가격</span>
+          <span><i style="border-color:var(--fg-3);border-top-width:1.5px"></i>20일 평균</span>
+          <span><i style="border-color:var(--normal);border-top-style:dashed"></i>평년</span>
+          ${fc ? `<span><i style="border-color:var(--accent);border-top-style:dashed"></i>예측</span><span><i class="band"></i>80% 범위</span>` : ""}
+        </div>
+      </section>
+
+      ${fc ? `<section class="card">
+        <div class="sec-h"><h2>예상 가격</h2><span class="sub">80% 확률 범위</span></div>
+        <table class="fc-table"><thead><tr><th>시점</th><th>예상</th><th>오늘 대비</th><th>범위</th></tr></thead>
+        <tbody>${fcRow(4, "1주 뒤")}${fcRow(9, "2주 뒤")}${fcRow(19, "4주 뒤")}</tbody></table>
+        <p class="hint">4주 뒤 지금보다 오를 확률 <b class="num" style="color:var(--fg)">${Math.round(fc.p_up_4w * 100)}%</b>${fc.seasonal_item ? " · 제철 품목이라 이번 출하 시즌 자료만으로 예측했어요" : ""}</p>
+      </section>` : `<section class="card"><div class="empty"><b>${stale ? "비수기라 예측을 쉬고 있어요" : "예측하기엔 자료가 부족해요"}</b>${stale ? "조사가 다시 시작되면 예측이 자동으로 나와요." : "약 2개월(40영업일) 이상 자료가 쌓이면 예측이 시작돼요."}</div></section>`}
+
+      <section class="card">
+        <div class="sec-h"><h2>출하 판단 참고</h2></div>
+        <div class="sig-big"><span class="pill ${esc(sig.code)}">${esc(sig.label)}</span>${sig.storable ? `<span class="tag">저장 가능 품목</span>` : ""}</div>
+        <ul class="reasons">${sig.reasons.map(r => `<li>${esc(r)}</li>`).join("")}</ul>
+      </section>
+
+      <section class="card">
+        <div class="sec-h"><h2>시장 지표</h2></div>
+        <div class="metrics">
+          <div class="metric"><div class="k">주간 변동폭</div><div class="v">±${vol.weekly == null ? "–" : (vol.weekly * 100).toFixed(1) + "%"}</div><div class="d">${vol.grade ? `평소 대비 <b>${esc(vol.grade)}</b>` : "평소 수준 판단엔 자료 부족"}</div></div>
+          <div class="metric"><div class="k">평년 가격</div><div class="v">${won(d.normal)}</div><div class="d">지금은 ${d.vs_normal == null ? "–" : (d.vs_normal >= 0 ? "평년보다 " + Math.round(d.vs_normal * 100) + "% 높음" : "평년보다 " + Math.round(-d.vs_normal * 100) + "% 낮음")}</div></div>
+          ${acc ? `<div class="metric"><div class="k">이 품목 4주 예측 오차</div><div class="v">${(acc.mape_4w * 100).toFixed(1)}%</div><div class="d">가격 그대로 둘 때보다 ${acc.skill_vs_naive >= 0 ? Math.round(acc.skill_vs_naive * 100) + "% 정확" : Math.round(-acc.skill_vs_naive * 100) + "% 부정확"}</div></div>
+          <div class="metric"><div class="k">방향 적중률</div><div class="v">${acc.direction_hit_4w == null ? "–" : Math.round(acc.direction_hit_4w * 100) + "%"}</div><div class="d">과거 ${acc.n_tests}번 검증</div></div>` : ""}
+        </div>
+        ${pos != null ? `<div style="margin-top:16px"><div class="k flat" style="font-size:12px;margin-bottom:10px">최근 1년 가격대 중 현재 위치</div>
+          <div class="range"><i style="left:${Math.max(2, Math.min(98, pos * 100))}%"></i></div>
+          <div class="range-l"><span>최저 <b class="num">${won(d.range_1y.low)}</b></span><span>최고 <b class="num">${won(d.range_1y.high)}</b></span></div></div>` : ""}
+      </section>
+
+      ${season ? `<section class="card">
+        <div class="sec-h"><h2>월별 가격 흐름</h2><span class="sub">${esc(season.source)} 기준 · 연평균 100</span></div>
+        <div class="months" role="img" aria-label="월별 가격 지수, ${season.peak_month}월이 가장 비싸고 ${season.low_month}월이 가장 쌈">
+          ${Array.from({ length: 12 }, (_, i) => i + 1).map(m => {
+            const v = season.index[m];
+            if (v == null) return `<div><i style="height:0"></i><span>${m}</span></div>`;
+            const vals = Object.values(season.index), lo = Math.min(...vals), hi = Math.max(...vals);
+            const h = 18 + (hi > lo ? (v - lo) / (hi - lo) : .5) * 72;
+            const cls = (m === season.peak_month ? "hi" : m === season.low_month ? "lo" : "") + (m === curMonth ? " now" : "");
+            return `<div title="${m}월 ${v}"><i class="${cls}" style="height:${h}%"></i><span>${m}</span></div>`;
+          }).join("")}
+        </div>
+        <p class="hint">${season.peak_month}월에 가장 비싸고(지수 ${season.index[season.peak_month]}), ${season.low_month}월에 가장 싸요(지수 ${season.index[season.low_month]}). 테두리는 이번 달이에요.</p>
+      </section>` : ""}
+
+      ${d.quality.unit_changed_on || d.quality.outliers_removed ? `<p class="disclaimer">${d.quality.unit_changed_on ? `조사 단위가 ${fmtDate(d.quality.unit_changed_on)}부터 바뀌어 그 이후 자료만 사용했어요. ` : ""}${d.quality.outliers_removed ? `입력 오류로 보이는 값 ${d.quality.outliers_removed}건을 분석에서 제외했어요.` : ""}</p>` : ""}
+      <p class="disclaimer">예측은 과거 가격·평년 패턴 기반의 통계 추정이에요. 기상 이변이나 수입 물량 같은 외부 요인은 반영되지 않습니다.</p>
+    </div>`;
+
+    document.getElementById("star").onclick = e => {
+      watch.has(d.id) ? watch.delete(d.id) : watch.add(d.id);
+      store.set("watch", [...watch]);
+      const on = watch.has(d.id);
+      e.currentTarget.setAttribute("aria-pressed", on);
+      e.currentTarget.textContent = on ? "★ 관심" : "☆ 관심";
+    };
+    const draw = () => drawChart(document.getElementById("chart"), d, state.range);
+    app.querySelectorAll("[data-rg]").forEach(b => b.onclick = () => {
+      state.range = +b.dataset.rg; savePrefs();
+      app.querySelectorAll("[data-rg]").forEach(x => x.setAttribute("aria-pressed", x === b)); draw();
+    });
+    draw();
+    window.scrollTo(0, 0);
+  }
+
+  // ---------- 차트 (SVG, 손으로 그림: 예측 범위·평년선·구간 끊김 처리) ----------
+  let resizeChart = null;
+  function drawChart(el, d, nRange) {
+    const H = d.history, fc = d.forecast;
+    const n = H.dates.length, start = Math.max(0, n - nRange);
+    const hist = []; for (let i = start; i < n; i++) hist.push({ date: H.dates[i], p: H.price[i], ma: H.ma20[i], nm: H.normal[i] });
+    const fut = fc ? fc.dates.map((dt, i) => ({ date: dt, c: fc.center[i], lo: fc.lo80[i], hi: fc.hi80[i] })) : [];
+    const N = hist.length + fut.length;
+    const W = Math.max(280, el.clientWidth), Ht = 230, m = { l: 8, r: 46, t: 14, b: 24 };
+    const vals = [];
+    hist.forEach(h => { vals.push(h.p); if (h.nm != null) vals.push(h.nm); if (h.ma != null) vals.push(h.ma); });
+    fut.forEach(f => vals.push(f.lo, f.hi));
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const ticks = niceTicks(lo, hi, 4); lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks[ticks.length - 1]);
+    const x = i => m.l + (N <= 1 ? 0 : i / (N - 1)) * (W - m.l - m.r);
+    const y = v => m.t + (1 - (v - lo) / (hi - lo || 1)) * (Ht - m.t - m.b);
+    // 21일 넘게 비면 선을 끊는다(비수기)
+    const gap = (a, b) => (new Date(b) - new Date(a)) / 864e5 > 21;
+    const path = (arr, get) => {
+      let s = "", pen = false;
+      arr.forEach((o, i) => {
+        const v = get(o);
+        if (v == null || (i > 0 && gap(arr[i - 1].date, o.date))) { pen = false; if (v == null) return; }
+        s += (pen ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1); pen = true;
+      });
+      return s;
+    };
+    const iNow = hist.length - 1;
+    let svg = `<svg viewBox="0 0 ${W} ${Ht}" height="${Ht}" role="img" aria-label="${esc(d.item)} 가격 추이 차트">`;
+    ticks.forEach(t => { if (t < lo || t > hi) return; svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)" stroke-width="1" ${t === ticks[0] ? "" : 'stroke-dasharray="2 4"'}/><text x="${W - m.r + 6}" y="${y(t) + 3.5}">${shortWon(t)}</text>`; });
+    // x 눈금: 월 시작
+    const marks = []; let lastM = "";
+    [...hist, ...fut].forEach((o, i) => { const mm = o.date.slice(0, 7); if (mm !== lastM) { marks.push([i, mm]); lastM = mm; } });
+    const every = Math.ceil(marks.length / 5);
+    marks.forEach(([i, mm], k) => { if (k === 0 && i < 3) return; if (k % every) return; const [yy, mo] = mm.split("-"); svg += `<text x="${x(i)}" y="${Ht - 6}" text-anchor="middle">${+mo === 1 || nRange > 300 && k === 0 ? yy.slice(2) + "." : ""}${+mo}월</text>`; });
+    if (fut.length) {
+      const band = fut.map((f, i) => `${x(iNow + 1 + i).toFixed(1)} ${y(f.hi).toFixed(1)}`);
+      const bandLo = fut.map((f, i) => `${x(iNow + 1 + i).toFixed(1)} ${y(f.lo).toFixed(1)}`).reverse();
+      svg += `<path d="M${x(iNow)} ${y(hist[iNow].p)} L${band.join(" L")} L${bandLo.join(" L")} Z" fill="var(--band)"/>`;
+      svg += `<line x1="${x(iNow)}" x2="${x(iNow)}" y1="${m.t - 6}" y2="${Ht - m.b}" stroke="var(--fg-3)" stroke-width="1" stroke-dasharray="3 3"/>`;
+      svg += `<text x="${x(iNow) - 4}" y="${m.t - 2}" text-anchor="end" style="fill:var(--fg-2)">오늘</text>`;
+    }
+    svg += `<path d="${path(hist, o => o.nm)}" fill="none" stroke="var(--normal)" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+    svg += `<path d="${path(hist, o => o.ma)}" fill="none" stroke="var(--fg-3)" stroke-width="1.5" opacity=".8"/>`;
+    svg += `<path d="${path(hist, o => o.p)}" fill="none" stroke="var(--fg)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    if (fut.length) {
+      svg += `<path d="M${x(iNow)} ${y(hist[iNow].p)} ${fut.map((f, i) => `L${x(iNow + 1 + i).toFixed(1)} ${y(f.c).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="5 3"/>`;
+      const lf = fut[fut.length - 1];
+      svg += `<circle cx="${x(N - 1)}" cy="${y(lf.c)}" r="4" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/>`;
+    }
+    svg += `<circle cx="${x(iNow)}" cy="${y(hist[iNow].p)}" r="4.5" fill="var(--fg)" stroke="var(--surface)" stroke-width="2"/>`;
+    svg += `<g id="hov" style="display:none"><line id="hl" y1="${m.t}" y2="${Ht - m.b}" stroke="var(--fg-2)" stroke-width="1"/><circle id="hc" r="4.5" fill="var(--surface)" stroke-width="2.5"/></g>`;
+    svg += `<rect x="0" y="0" width="${W}" height="${Ht}" fill="transparent" id="hit"/></svg><div class="tip" id="tip" hidden></div>`;
+    el.innerHTML = svg;
+
+    const hit = el.querySelector("#hit"), hov = el.querySelector("#hov"), tip = el.querySelector("#tip");
+    const show = ev => {
+      const r = el.getBoundingClientRect();
+      const px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left;
+      const sx = px * (W / r.width);
+      let i = Math.round((sx - m.l) / (W - m.l - m.r) * (N - 1)); i = Math.max(0, Math.min(N - 1, i));
+      const isF = i > iNow, o = isF ? fut[i - iNow - 1] : hist[i];
+      const v = isF ? o.c : o.p;
+      hov.style.display = "";
+      el.querySelector("#hl").setAttribute("x1", x(i)); el.querySelector("#hl").setAttribute("x2", x(i));
+      const c = el.querySelector("#hc"); c.setAttribute("cx", x(i)); c.setAttribute("cy", y(v)); c.setAttribute("stroke", isF ? "var(--accent)" : "var(--fg)");
+      tip.hidden = false;
+      tip.innerHTML = isF
+        ? `${fmtDate(o.date, true)} <span style="opacity:.7">예측</span><br><b>${won(o.c)}원</b><br><span style="opacity:.75">${won(o.lo)} ~ ${won(o.hi)}</span>`
+        : `${fmtDate(o.date, true)}<br><b>${won(o.p)}원</b>${o.nm != null ? `<br><span style="opacity:.75">평년 ${won(o.nm)}</span>` : ""}`;
+      const left = x(i) * (r.width / W);
+      tip.style.left = Math.max(60, Math.min(r.width - 60, left)) + "px";
+      tip.style.top = "-6px";
+    };
+    const hide = () => { hov.style.display = "none"; tip.hidden = true; };
+    hit.addEventListener("pointermove", show); hit.addEventListener("pointerdown", show);
+    hit.addEventListener("pointerleave", hide);
+    resizeChart = () => document.body.contains(el) && drawChart(el, d, nRange);
+  }
+  let rT; window.addEventListener("resize", () => { clearTimeout(rT); rT = setTimeout(() => resizeChart && resizeChart(), 150); });
+
+  function niceTicks(lo, hi, count) {
+    const span = hi - lo || hi || 1, raw = span / count, p = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map(k => k * p).find(s => s >= raw) || 10 * p;
+    const out = []; for (let t = Math.floor(lo / step) * step; t <= hi + step * 0.001; t += step) out.push(+t.toFixed(6));
+    if (out[out.length - 1] < hi) out.push(out[out.length - 1] + step);
+    return out;
+  }
+  const shortWon = v => v >= 1e4 ? (v / 1e4).toFixed(v % 1e4 === 0 ? 0 : v >= 1e5 ? 0 : 1).replace(/\.0$/, "") + "만" : Math.round(v).toLocaleString("ko-KR");
+  // 같은 품목의 상품/중품이 나란히 나오지 않게 품목·품종당 하나만(목록 순서상 먼저 나온 것)
+  const uniq = arr => { const seen = new Set(); return arr.filter(s => { const k = s.cls + s.item + s.kind; if (seen.has(k)) return false; seen.add(k); return true; }); };
+  const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); const h = s.length >> 1; return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2; };
+
+  // ---------- 분석 방법 ----------
+  function renderMethod() {
+    defaultTop();
+    const ev = state.meta.evaluation;
+    app.innerHTML = `<div class="view">
+      <section class="card method">
+        <h3>데이터</h3>
+        <p>한국농수산식품유통공사 KAMIS가 매일 조사하는 도매·소매 가격을 영업일마다 자동으로 모아요. 품목·품종·등급(상품/중품)별로 따로 분석하고, 조사 단위가 바뀌면 바뀐 뒤 자료만 써요.</p>
+        <h3>평균과 변동성</h3>
+        <ul><li><b>20일 평균</b>: 최근 20영업일(약 한 달) 평균 가격</li>
+          <li><b>평년</b>: KAMIS가 제공하는 최근 5년 같은 시기 평균(최고·최저 제외)</li>
+          <li><b>주간 변동폭</b>: 최근 20영업일 하루 변동률을 1주 단위로 환산. ‘평소 대비’는 이 품목의 과거 변동폭과 비교한 등급이에요.</li></ul>
+        <h3>4주 예측</h3>
+        <p>세 가지 방법을 섞어요. 가격이 그대로 간다고 보는 방법, 최근 흐름을 서서히 약하게 이어 가는 방법, 평년 계절 흐름을 따라가며 평년과의 차이가 줄어든다고 보는 방법이에요. 최근 10개월 동안 품목별로 더 잘 맞았던 방법에 더 큰 비중을 둡니다.</p>
+        <p>‘80% 범위’는 과거 실제 예측 오차로 만든 범위라서, 10번 중 8번 정도는 실제 가격이 이 안에 들어오도록 맞춰져 있어요.</p>
+        ${ev ? `<p>전체 검증 결과(과거 ${ev.n.toLocaleString()}회): 4주 범위 적중 ${Math.round(ev.coverage_80_4w * 100)}%, 평균 오차 ${(ev.mape_4w * 100).toFixed(1)}% (가격 그대로 예측할 때 ${(ev.naive_mape_4w * 100).toFixed(1)}%), 방향 적중 ${ev.direction_hit_4w == null ? "–" : Math.round(ev.direction_hit_4w * 100) + "%"}.</p>` : ""}
+        <h3>출하 신호</h3>
+        <ul><li><b>지금 출하 유리</b>: 가격이 평년이나 1년 가격대보다 높고, 4주 뒤 3% 넘게 하락할 가능성이 65% 이상</li>
+          <li><b>출하 앞당기기 검토</b>: 가격 수준은 보통인데 하락 흐름이 뚜렷함</li>
+          <li><b>출하 늦추기 검토</b>: 3% 넘게 오를 가능성이 65% 이상이고 저장 가능한 품목</li>
+          <li><b>가격 상승 흐름</b>: 오를 가능성은 높지만 저장이 어려운 품목(수확 일정 조정 참고)</li>
+          <li><b>관망</b>: 뚜렷한 방향이 없음</li></ul>
+        <h3>한계</h3>
+        <p>기상 이변, 수입 물량, 정책 같은 외부 요인은 반영하지 않아요. 신호는 판단을 돕는 참고 정보이며 판매 결과를 보장하지 않습니다.</p>
+      </section>
+      <p class="disclaimer">자료: ${esc(state.meta.source)} · 분석 생성 ${esc(state.meta.generated_at.replace("T", " ").slice(0, 16))} (UTC)</p>
+    </div>`;
+  }
+
+  // ---------- 시작 ----------
+  async function boot() {
+    try {
+      const [meta, overview, catalog] = await Promise.all([getJSON("meta.json"), getJSON("overview.json"), getJSON("catalog.json")]);
+      Object.assign(state, { meta, overview, catalog });
+      if (!["01", "02"].includes(state.cls)) state.cls = "02";
+      if (![60, 250, 520].includes(state.range)) state.range = 250;
+      if (!SORTS[state.sort]) state.sort = "vs_normal";
+      window.addEventListener("hashchange", route);
+      route();
+    } catch (e) {
+      app.innerHTML = `<div class="view"><div class="card empty"><b>시세 자료를 불러오지 못했어요</b>잠시 후 새로고침해 주세요. 계속되면 자료 갱신 작업이 실패했을 수 있어요.</div></div>`;
+      document.getElementById("asof").innerHTML = "<b>&nbsp;</b>연결 오류";
+    }
+  }
+  boot();
+})();
+</script>

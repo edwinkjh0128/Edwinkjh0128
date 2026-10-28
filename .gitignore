@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+pipeline/data/
+web/data.old/
+web/.export-*/
+.env
