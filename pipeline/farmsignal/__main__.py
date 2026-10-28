@@ -51,6 +51,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--days", type=int, default=730)
     p.add_argument("--end", type=date.fromisoformat)
 
+    p = sub.add_parser("wholesale", help="도매시장 경락가·반입량 수집")
+    p.add_argument("--days", type=int, default=7, help="오늘부터 며칠 전까지(처음엔 730)")
+    p.add_argument("--max-calls", type=int, default=8000)
+
     p = sub.add_parser("export")
     p.add_argument("--out", type=Path, default=DEFAULT_OUT)
 
@@ -80,6 +84,24 @@ def main(argv: list[str] | None = None) -> int:
                 end = args.end or today_kst()
                 s = backfill(_client(), store, end - timedelta(days=args.days), end)
                 print(f"백필 완료: 요청 {s.requests}건, 저장 {s.rows}행, 오류 {len(s.errors)}")
+                return 0
+            if args.cmd == "wholesale":
+                from .collect import collect_wholesale
+                from .wholesale import WholesaleAuthError, WholesaleClient
+                st = load_settings()
+                if not st.data_go_kr_key:
+                    print("DATA_GO_KR_KEY가 없어 도매시장 수집을 건너뜁니다.")
+                    return 0
+                end = today_kst()
+                client = WholesaleClient(st.data_go_kr_key)
+                try:
+                    s = collect_wholesale(client, store, end - timedelta(days=args.days), end,
+                                          st.markets, refresh_recent=2, max_calls=args.max_calls)
+                except WholesaleAuthError as e:
+                    print(f"도매시장 인증 오류: {e}", file=sys.stderr)
+                    return 2
+                print(f"도매시장 수집: 요청 {s.requests}일, 품목집계 {s.rows}행, 빈 날 {s.empty}, "
+                      f"오류 {len(s.errors)}, API 호출 {client.calls}회")
                 return 0
             if args.cmd == "export":
                 meta = export_all(store, args.out)
@@ -120,6 +142,12 @@ def _demo(args, db: Path) -> int:
         store.set_meta("demo", "1")
         s = backfill(client, store, end - timedelta(days=args.days), end)
         print(f"데모 수집: 요청 {s.requests}건, 저장 {s.rows}행")
+        from .collect import collect_wholesale
+        from .demo import DemoWholesaleTransport
+        from .wholesale import WholesaleClient
+        wc = WholesaleClient("demo", transport=DemoWholesaleTransport(market), min_interval=0)
+        w = collect_wholesale(wc, store, end - timedelta(days=args.days), end, ("110001",))
+        print(f"데모 도매시장: {w.requests}일, 품목집계 {w.rows}행, 호출 {wc.calls}회")
         meta = export_all(store, args.out)
         print(f"데모 내보내기: {meta['n_series']}개 품목, 기준일 {meta['asof']} → {args.out}")
     return 0

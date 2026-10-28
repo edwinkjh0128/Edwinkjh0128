@@ -34,6 +34,8 @@ class Settings:
     cert_key: str | None
     cert_id: str | None
     db_path: Path
+    data_go_kr_key: str | None = None
+    markets: tuple[str, ...] = ("110001",)
 
     @property
     def has_credentials(self) -> bool:
@@ -46,4 +48,7 @@ def load_settings() -> Settings:
         cert_key=os.getenv("KAMIS_CERT_KEY") or None,
         cert_id=os.getenv("KAMIS_CERT_ID") or None,
         db_path=Path(os.getenv("FARMSIGNAL_DB", str(default_db))),
+        # 공공데이터포털 '일반 인증키(Decoding)'
+        data_go_kr_key=os.getenv("DATA_GO_KR_KEY") or None,
+        markets=tuple(m.strip() for m in os.getenv("WHOLESALE_MARKETS", "110001").split(",") if m.strip()),
     )

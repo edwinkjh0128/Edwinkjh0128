@@ -316,6 +316,17 @@ def overview(summaries: list[dict], asof: date) -> dict:
         pool.sort(key=lambda s: s[key], reverse=reverse)
         return [_brief(s) for s in pool[:n]]
 
+    # 반입량 변화(품목 단위 지표라 도매 상품 등급 하나만 대표로)
+    seen: set[str] = set()
+    supply = []
+    for s in fresh:
+        if s.get("vol_chg_4w") is None or s["item"] in seen:
+            continue
+        if s["cls"] == "02" and s["rank"] == "상품":
+            seen.add(s["item"])
+            supply.append(s)
+    supply.sort(key=lambda s: s["vol_chg_4w"], reverse=True)
+
     signals: dict[str, int] = {}
     for s in fresh:
         signals[s["signal"]] = signals.get(s["signal"], 0) + 1
@@ -329,6 +340,8 @@ def overview(summaries: list[dict], asof: date) -> dict:
         "volatile": top("vol_weekly", True),
         "sell_signals": [_brief(s) for s in fresh if s["signal"] in ("sell", "sell_soft")][:10],
         "hold_signals": [_brief(s) for s in fresh if s["signal"] in ("hold", "hold_soft")][:10],
+        "supply_up": [_brief(s) for s in supply if s["vol_chg_4w"] >= 0.1][:6],
+        "supply_down": [_brief(s) for s in reversed(supply) if s["vol_chg_4w"] <= -0.1][:6],
         "signal_counts": signals,
         "n_series": len(summaries),
         "n_fresh": len(fresh),
@@ -337,5 +350,6 @@ def overview(summaries: list[dict], asof: date) -> dict:
 
 def _brief(s: dict) -> dict:
     keys = ("id", "cls", "cat_name", "item", "kind", "rank", "unit", "price", "chg_1w",
-            "vs_normal", "vol_weekly", "fc_chg_4w", "p_up_4w", "signal", "signal_label")
+            "vs_normal", "vol_weekly", "fc_chg_4w", "p_up_4w", "signal", "signal_label",
+            "vol_chg_4w", "wh_price_kg")
     return {k: s.get(k) for k in keys}

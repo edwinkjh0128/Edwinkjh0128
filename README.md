@@ -14,6 +14,7 @@ KAMIS Open API ──▶ 수집기(매일) ──▶ SQLite ──▶ 분석·�
 
 | 경로 | 내용 |
 |---|---|
+| `pipeline/farmsignal/wholesale.py` | 공영도매시장 경매 수집 → 일별 품목 경락가(kg당)·반입량 집계, KAMIS 품목 연결 |
 | `pipeline/farmsignal/kamis.py` | KAMIS API 클라이언트·응답 파서 (재시도, 인증 오류 즉시 중단, 휴일 날짜 보정) |
 | `pipeline/farmsignal/storage.py` | SQLite 저장소 (중복 없이 갱신, 수집 기록으로 중단 후 이어하기) |
 | `pipeline/farmsignal/collect.py` | 일일 수집 / 과거 데이터 백필 |
@@ -22,7 +23,7 @@ KAMIS Open API ──▶ 수집기(매일) ──▶ SQLite ──▶ 분석·�
 | `pipeline/farmsignal/evaluate.py` | 홀드아웃 검증(예측이 실제로 얼마나 맞았는지) |
 | `pipeline/farmsignal/export.py` | 웹앱용 JSON 내보내기(원자적 교체) |
 | `pipeline/farmsignal/demo.py` | KAMIS와 같은 형식의 데모 데이터 생성기 |
-| `pipeline/tests/` | 단위·통합 테스트 21개 |
+| `pipeline/tests/` | 단위·통합 테스트 28개 |
 | `web/index.html` | 모바일 웹앱(오늘 / 시세 / 관심 / 분석 방법) |
 | `.github/workflows/daily.yml` | 매일 수집 → 분석 → 배포 자동화 |
 
@@ -44,6 +45,16 @@ cd ../web && python -m http.server 8000   # 브라우저에서 http://localhost:
 5. **Actions → 가격 수집·배포 → Run workflow**, `backfill_days`에 `730` 입력(처음 한 번, 약 1시간).
 6. 이후로는 매일 KST 18:13, 21:13(월~토)에 자동 실행됩니다.
 
+### 도매시장 경락가·반입량 (선택)
+
+1. 공공데이터포털에서 **'한국농수산식품유통공사_전국 공영도매시장 실시간 경매정보'** 활용신청 (자동승인)
+2. 마이페이지 → 개발계정의 **일반 인증키(Decoding)** 를 저장소 시크릿 `DATA_GO_KR_KEY`로 등록
+3. 다음 자동 실행부터 가락시장 경매가 매일 쌓여요. 과거분은 실행당 4,500회 호출 한도 안에서 며칠에 걸쳐 채워집니다.
+
+키가 없으면 이 부분만 빠지고 나머지는 그대로 동작해요. 첫 수집 후 Actions 로그에서
+`가격 대조 검사` 줄을 확인하세요. 가락 경락가와 KAMIS 도매가(kg당)의 비율이 0.3~3 밖이면 경고가 나오는데,
+그러면 단가·단위 해석이 실제 응답과 다른 것이니 로그를 보고 `wholesale.py`를 고쳐야 합니다.
+
 로컬에서 직접 돌릴 때:
 
 ```bash
@@ -51,6 +62,7 @@ export KAMIS_CERT_KEY=... KAMIS_CERT_ID=...
 cd pipeline
 python -m farmsignal backfill --days 730   # 처음 한 번 (끊겨도 다시 실행하면 이어서)
 python -m farmsignal collect               # 매일
+python -m farmsignal wholesale --days 730  # 도매시장 (DATA_GO_KR_KEY 필요)
 python -m farmsignal export                # web/data 갱신
 python -m farmsignal evaluate              # 예측 성능 확인
 ```
@@ -68,6 +80,8 @@ python -m farmsignal evaluate              # 예측 성능 확인
   같은 백테스트의 실제 오차 분포로 80% 범위를 만듭니다.
 - **제철 품목**(딸기·포도·감귤 등): 21일 넘게 조사가 끊기면 구간을 나눠, 현재 출하 시즌 자료로만 예측합니다.
   14일 넘게 조사가 없으면 예측·신호를 숨기고 ‘조사 중단(비수기)’로 표시합니다.
+- **경락가·반입량**: 가락시장 경매 건별 낙찰가를 물량 가중 평균(kg당). 최근 5일 평균 반입량이 4주 평균보다 20% 넘게 많거나 적으면 출하 신호 근거에 표시.
+  (아직 예측 모델에 넣지는 않았어요. 실데이터가 쌓이면 반입량을 넣은 모델을 검증한 뒤 반영할 계획)
 - **출하 신호**: 평년·1년 가격대 위치 + 4주 예상 변동 + 상승 확률. ‘출하 늦추기’는 저장 가능한 품목에만 냅니다.
 
 ### 데모 데이터 기준 검증 결과

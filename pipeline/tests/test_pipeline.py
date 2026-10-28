@@ -262,5 +262,113 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(res["signal"], "none")
 
 
+# ---------------------------------------------------------------------------
+# 도매시장 경매(경락가·반입량)
+# ---------------------------------------------------------------------------
+from farmsignal.collect import collect_wholesale  # noqa: E402
+from farmsignal.wholesale import (WholesaleAuthError, WholesaleClient,  # noqa: E402
+                                  WholesaleQuotaError, aggregate, match_item, parse_page,
+                                  supply_metrics, supply_reason, unit_kg)
+
+
+def lot(**kw):
+    base = {"trd_clcln_ymd": "2026-10-27", "whsl_mrkt_cd": "110001", "gds_lclsf_cd": "10",
+            "gds_lclsf_nm": "엽경채류", "gds_mclsf_cd": "01", "gds_mclsf_nm": "배추",
+            "gds_sclsf_nm": "가을배추", "scsbd_prc": "12000", "qty": "10", "unit_qty": "10",
+            "unit_nm": "kg"}
+    base.update(kw)
+    return base
+
+
+def page(items, total=None, code="00"):
+    return {"response": {"header": {"resultCode": code, "resultMsg": "x"},
+                         "body": {"items": {"item": items},
+                                  "totalCount": len(items) if total is None else total}}}
+
+
+class WholesaleTests(unittest.TestCase):
+    def test_unit_kg(self):
+        self.assertEqual(unit_kg("kg", "10"), 10)
+        self.assertEqual(unit_kg(" KG ", "2.5"), 2.5)
+        self.assertEqual(unit_kg("g", "500"), 0.5)
+        self.assertIsNone(unit_kg("개", "1"))
+        self.assertIsNone(unit_kg("kg", "0"))
+
+    def test_parse_page_shapes_and_errors(self):
+        rows, total = parse_page(page([lot()], total=5))
+        self.assertEqual((len(rows), total), (1, 5))
+        rows, _ = parse_page({"response": {"header": {"resultCode": "00"},
+                                           "body": {"items": {"item": lot()}, "totalCount": 1}}})
+        self.assertEqual(len(rows), 1)  # 단일 dict
+        self.assertEqual(parse_page({"response": {"header": {"resultCode": "03"}}}), ([], 0))
+        with self.assertRaises(WholesaleAuthError):
+            parse_page(page([], code="30"))
+        with self.assertRaises(WholesaleQuotaError):
+            parse_page(page([], code="22"))
+
+    def test_aggregate_weighted_price_and_skips_non_weight(self):
+        lots = [lot(scsbd_prc="10000", qty="10", unit_qty="10"),   # 100kg, 1000원/kg
+                lot(scsbd_prc="40000", qty="5", unit_qty="20"),    # 100kg, 2000원/kg
+                lot(unit_nm="개", unit_qty="1"),
+                lot(scsbd_prc="0")]
+        a = aggregate(lots, D, "110001")[0]
+        self.assertEqual((a.kg, a.lots, a.skipped_lots), (200, 2, 1))
+        self.assertAlmostEqual(a.avg_per_kg, 1500)
+        self.assertEqual(a.item_cd, "10-01")
+
+    def test_match_item_aliases(self):
+        names = {"10-01": "배추", "12-03": "대파", "12-09": "깐마늘", "06-01": "배"}
+        self.assertEqual(match_item("배추", names), "10-01")
+        self.assertEqual(match_item("파", names), "12-03")
+        self.assertEqual(match_item("깐마늘(국산)", names), "12-09")
+        self.assertEqual(match_item("배", names), "06-01")
+        self.assertIsNone(match_item("딸기", names))
+
+    def test_client_paginates(self):
+        all_items = [lot(qty=str(i + 1)) for i in range(2500)]
+
+        def t(params):
+            p, n = int(params["pageNo"]), int(params["numOfRows"])
+            return page(all_items[(p - 1) * n: p * n], total=len(all_items))
+
+        c = WholesaleClient("K", transport=t, min_interval=0, sleep=lambda s: None)
+        self.assertEqual(len(c.day_lots(D, "110001")), 2500)
+        self.assertEqual(c.calls, 3)
+
+    def test_collect_stops_when_history_missing_and_on_quota(self):
+        def t(params):
+            d = date.fromisoformat(params["cond[trd_clcln_ymd::EQ]"])
+            return page([lot()] if (D - d).days <= 40 else [])
+
+        c = WholesaleClient("K", transport=t, min_interval=0, sleep=lambda s: None)
+        with Store(":memory:") as s:
+            r = collect_wholesale(c, s, D - timedelta(days=400), D, ("110001",))
+            self.assertLess(r.requests, 70)   # 40일 + 빈 날 15일 정도에서 멈춤
+            again = collect_wholesale(c, s, D - timedelta(days=400), D, ("110001",))
+            self.assertLessEqual(again.requests, 2)  # 최근 정정분만 다시
+
+        def quota(params):
+            return page([], code="22")
+        c2 = WholesaleClient("K", transport=quota, min_interval=0, sleep=lambda s: None)
+        with Store(":memory:") as s:
+            r = collect_wholesale(c2, s, D - timedelta(days=10), D, ("110001",))
+            self.assertEqual(r.requests, 1)
+            self.assertTrue(r.errors)
+
+    def test_supply_metrics_and_reason(self):
+        rows = []
+        d = D - timedelta(days=60)
+        while d <= D:
+            if d.weekday() != 6:
+                rows.append((d, 1000.0, 500.0))
+            d += timedelta(days=1)
+        rows[-5:] = [(r[0], 1500.0, 450.0) for r in rows[-5:]]
+        m = supply_metrics(rows, D)
+        self.assertAlmostEqual(m["vol_chg_4w"], 0.5)
+        self.assertIn("많음", supply_reason(m))
+        self.assertIsNone(supply_metrics(rows[:5], D))
+        self.assertIsNone(supply_metrics(rows, D + timedelta(days=30)))  # 오래된 자료
+
+
 if __name__ == "__main__":
     unittest.main()

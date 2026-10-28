@@ -4,3 +4,4 @@ pipeline/data/
 web/data.old/
 web/.export-*/
 .env
+web/data/

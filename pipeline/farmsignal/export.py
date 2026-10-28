@@ -28,7 +28,7 @@ SUMMARY_KEYS = (
     "id", "cls", "cls_name", "cat", "cat_name", "item", "kind", "rank", "unit", "date",
     "price", "chg_1d", "chg_1w", "chg_1m", "chg_1y", "vs_normal", "normal", "vol_weekly",
     "vol_grade", "position_1y", "fc_4w", "fc_4w_lo", "fc_4w_hi", "fc_chg_4w", "p_up_4w",
-    "signal", "signal_label", "n_obs", "stale_days",
+    "signal", "signal_label", "n_obs", "stale_days", "vol_chg_4w", "wh_price_kg",
 )
 
 
@@ -50,10 +50,26 @@ def _dump(path: Path, data) -> None:
                     encoding="utf-8")
 
 
+def _unit_kg(unit: str) -> float | None:
+    """'10kg(망3포기)' → 10, '500g' → 0.5, '1포기' → None"""
+    import re
+    m = re.match(r"\s*([\d.]+)\s*(kg|g)\b", unit or "", re.I)
+    if not m:
+        return None
+    v = float(m.group(1))
+    return v if m.group(2).lower() == "kg" else v / 1000
+
+
 def export_all(store: Store, out_dir: Path) -> dict:
     asof = store.latest_date()
     if asof is None:
         raise RuntimeError("저장된 가격이 없습니다. 먼저 collect/backfill(또는 demo)을 실행하세요.")
+
+    from .wholesale import match_item, supply_metrics, supply_reason
+    market = "110001"
+    wh_items = store.wholesale_items(market)
+    wh_cache: dict[str, dict | None] = {}
+    sanity: list[float] = []
 
     summaries: list[dict] = []
     details: list[dict] = []
@@ -63,6 +79,27 @@ def export_all(store: Store, out_dir: Path) -> dict:
             continue
         stale = (asof - datetime.fromisoformat(res["date"]).date()).days
         res["stale_days"] = stale
+
+        # 도매시장(가락) 경락가·반입량 붙이기 — 품목 단위
+        wh = None
+        cd = match_item(info.item_name, wh_items) if wh_items else None
+        if cd:
+            if cd not in wh_cache:
+                m = supply_metrics(store.wholesale_series(market, cd), asof)
+                if m:
+                    m.update({"market": "서울가락", "item_nm": wh_items[cd]})
+                wh_cache[cd] = m
+            wh = wh_cache[cd]
+        res["wholesale"] = wh
+        res["vol_chg_4w"] = wh["vol_chg_4w"] if wh else None
+        res["wh_price_kg"] = wh["price_kg"] if wh else None
+        reason = supply_reason(wh)
+        if reason and res["signal"] != "off":
+            res["signal_detail"]["reasons"].insert(-1, reason)
+        if wh and wh.get("price_kg") and info.product_cls == "02" and res["rank"] == "상품":
+            kg = _unit_kg(res["unit"])
+            if kg:
+                sanity.append(wh["price_kg"] / (res["price"] / kg))
         if stale > STALE_LIMIT:
             # 비수기 등으로 조사가 끊긴 품목: 옛 가격 기준 예측·신호는 오해를 부르므로 숨김
             res["forecast"] = None
@@ -75,6 +112,15 @@ def export_all(store: Store, out_dir: Path) -> dict:
         details.append(res)
         summaries.append({k: res.get(k) for k in SUMMARY_KEYS})
 
+    if sanity:
+        # 가락 경락가(kg당)와 KAMIS 도매 상품가(kg당)는 보통 같은 자릿수여야 한다.
+        # 비율 중앙값이 0.3~3을 벗어나면 단가/단위 해석이 틀렸을 가능성이 크다.
+        ratio = float(sorted(sanity)[len(sanity) // 2])
+        msg = "가격 대조 검사: 가락 경락가 / KAMIS 도매가(kg당) 중앙값 %.2f (%d개 품목)"
+        (log.info if 0.3 <= ratio <= 3 else log.warning)(msg, ratio, len(sanity))
+        if not 0.3 <= ratio <= 3:
+            log.warning("경락가 단위 해석을 확인하세요(wholesale.py 상단 설명 참고)")
+
     ov = overview(summaries, asof)
     from .evaluate import evaluate
     evaluation = evaluate(store, every=60)
@@ -83,7 +129,9 @@ def export_all(store: Store, out_dir: Path) -> dict:
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "asof": asof.isoformat(),
         "demo": store.get_meta("demo") == "1",
-        "source": "KAMIS(한국농수산식품유통공사) 농산물유통정보",
+        "source": "KAMIS(한국농수산식품유통공사) 농산물유통정보"
+                  + (", 공영도매시장 경매정보(공공데이터포털)" if wh_items else ""),
+        "has_wholesale": bool(wh_items),
         "n_series": len(summaries),
         "stats": store.stats(),
     }

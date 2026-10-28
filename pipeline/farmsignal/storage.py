@@ -43,6 +43,30 @@ CREATE TABLE IF NOT EXISTS fetch_log (
     fetched_at    TEXT NOT NULL,
     PRIMARY KEY (req_date, product_cls, category_code)
 );
+CREATE TABLE IF NOT EXISTS wh_daily (
+    date          TEXT NOT NULL,
+    market        TEXT NOT NULL,
+    item_cd       TEXT NOT NULL,
+    item_nm       TEXT NOT NULL,
+    cat_nm        TEXT NOT NULL,
+    kg            REAL NOT NULL,
+    amount        REAL NOT NULL,
+    lots          INTEGER NOT NULL,
+    skipped_lots  INTEGER NOT NULL,
+    p10_kg        REAL,
+    p90_kg        REAL,
+    kinds         TEXT NOT NULL,
+    PRIMARY KEY (date, market, item_cd)
+);
+CREATE TABLE IF NOT EXISTS wh_fetch_log (
+    req_date   TEXT NOT NULL,
+    market     TEXT NOT NULL,
+    status     TEXT NOT NULL,   -- ok | empty | error
+    n_lots     INTEGER NOT NULL,
+    message    TEXT,
+    fetched_at TEXT NOT NULL,
+    PRIMARY KEY (req_date, market)
+);
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -133,6 +157,47 @@ class Store:
                 (req_date.isoformat(), product_cls, category, status, n_rows,
                  message, _now()))
 
+    # ---- 도매시장 경매 집계 --------------------------------------------
+    def replace_wholesale_day(self, day: date, market: str, aggs: list) -> int:
+        with self.conn:
+            self.conn.execute("DELETE FROM wh_daily WHERE date=? AND market=?",
+                              (day.isoformat(), market))
+            for a in aggs:
+                p10, p90 = a.quantiles()
+                self.conn.execute(
+                    "INSERT INTO wh_daily VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (day.isoformat(), market, a.item_cd, a.item_nm, a.cat_nm, a.kg,
+                     a.amount, a.lots, a.skipped_lots, p10, p90, ",".join(sorted(a.kinds))))
+        return len(aggs)
+
+    def log_wholesale(self, day: date, market: str, status: str, n: int,
+                      message: str | None = None) -> None:
+        with self.conn:
+            self.conn.execute(
+                """INSERT INTO wh_fetch_log VALUES (?,?,?,?,?,?)
+                   ON CONFLICT(req_date, market) DO UPDATE SET status=excluded.status,
+                     n_lots=excluded.n_lots, message=excluded.message,
+                     fetched_at=excluded.fetched_at""",
+                (day.isoformat(), market, status, n, message, _now()))
+
+    def wholesale_done(self) -> set[tuple[str, str]]:
+        cur = self.conn.execute(
+            "SELECT req_date, market FROM wh_fetch_log WHERE status IN ('ok','empty')")
+        return {tuple(r) for r in cur.fetchall()}  # type: ignore[misc]
+
+    def wholesale_items(self, market: str) -> dict[str, str]:
+        cur = self.conn.execute(
+            "SELECT item_cd, item_nm FROM wh_daily WHERE market=? GROUP BY item_cd "
+            "ORDER BY SUM(kg) DESC", (market,))
+        return dict(cur.fetchall())
+
+    def wholesale_series(self, market: str, item_cd: str) -> list[tuple[date, float, float | None]]:
+        cur = self.conn.execute(
+            "SELECT date, kg, amount FROM wh_daily WHERE market=? AND item_cd=? ORDER BY date",
+            (market, item_cd))
+        return [(date.fromisoformat(d), kg, (amt / kg if kg > 0 else None))
+                for d, kg, amt in cur.fetchall()]
+
     def set_meta(self, key: str, value: str) -> None:
         with self.conn:
             self.conn.execute(
@@ -174,4 +239,7 @@ class Store:
             "first_date": c.execute("SELECT MIN(date) FROM prices").fetchone()[0],
             "last_date": c.execute("SELECT MAX(date) FROM prices").fetchone()[0],
             "errors": c.execute("SELECT COUNT(*) FROM fetch_log WHERE status='error'").fetchone()[0],
+            "wh_days": c.execute("SELECT COUNT(DISTINCT date) FROM wh_daily").fetchone()[0],
+            "wh_last_date": c.execute("SELECT MAX(date) FROM wh_daily").fetchone()[0],
+            "wh_errors": c.execute("SELECT COUNT(*) FROM wh_fetch_log WHERE status='error'").fetchone()[0],
         }

@@ -374,6 +374,19 @@ main { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
         <div class="list" style="margin-top:6px">${movers.slice(0, 6).map(rowHTML).join("")}</div>
       </section>
 
+      ${(ov.supply_up || []).length + (ov.supply_down || []).length ? `<section class="card">
+        <div class="sec-h"><h2>가락시장 반입량</h2><span class="sub">최근 5일 · 4주 평균 대비</span></div>
+        <div class="seg" role="group" aria-label="반입량 늘어난/줄어든 품목">
+          <button data-sp="up" aria-pressed="${state.supplyTab !== "down"}">많이 들어온</button>
+          <button data-sp="down" aria-pressed="${state.supplyTab === "down"}">적게 들어온</button>
+        </div>
+        <div class="list" style="margin-top:6px">${(state.supplyTab === "down" ? ov.supply_down : ov.supply_up).map(s => `<a class="row" href="#item-${esc(s.id)}">
+          <div class="t"><div class="nm">${esc(s.item)}</div><div class="meta">경락가 ${s.wh_price_kg == null ? "–" : won(s.wh_price_kg) + "원/kg"} · ${esc(s.cat_name)}</div></div>
+          <div class="r"><div class="p">${delta(s.vol_chg_4w, 0)}</div><div class="s flat">물량</div></div></a>`).join("") ||
+          `<div class="empty">해당 품목이 없어요</div>`}</div>
+        <p class="hint">물량이 크게 늘면 가격이 내려가기 쉽고, 줄면 오르기 쉬워요.</p>
+      </section>` : ""}
+
       ${ev ? `<section class="card">
         <div class="sec-h"><h2>예측은 얼마나 맞았나</h2><span class="sub">과거 ${ev.n.toLocaleString()}회 검증</span><a class="more" href="#method">자세히</a></div>
         <div class="trust">
@@ -386,6 +399,7 @@ main { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
     </div>`;
     bindSegCls(renderHome);
     app.querySelectorAll("[data-mv]").forEach(b => b.onclick = () => { state.moversTab = b.dataset.mv; renderHome(); });
+    app.querySelectorAll("[data-sp]").forEach(b => b.onclick = () => { state.supplyTab = b.dataset.sp; renderHome(); });
   }
 
   const segCls = () => `<div class="seg" role="group" aria-label="도매/소매">
@@ -409,6 +423,7 @@ main { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
     chg_1w_down: ["주간 하락률 순", s => (s.chg_1w ?? 9)],
     fc_chg_4w: ["4주 상승 예상 순", s => -(s.fc_chg_4w ?? -9)],
     vol_weekly: ["변동성 큰 순", s => -(s.vol_weekly ?? -9)],
+    vol_chg_4w: ["반입량 증가 순", s => -(s.vol_chg_4w ?? -9)],
     name: ["이름순", null],
   };
   function renderMarket() {
@@ -437,7 +452,8 @@ main { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
       document.getElementById("mk-list").innerHTML = rows.length ? rows.map(s => {
         const extra = state.sort === "vs_normal" ? `<span class="flat">평년</span>${delta(s.vs_normal, 0)}`
           : state.sort === "fc_chg_4w" ? `<span class="flat">4주</span>${delta(s.fc_chg_4w)}`
-          : state.sort === "vol_weekly" ? `<span class="flat">변동</span><span class="delta flat">±${s.vol_weekly == null ? "–" : (s.vol_weekly * 100).toFixed(1) + "%"}</span>` : "";
+          : state.sort === "vol_weekly" ? `<span class="flat">변동</span><span class="delta flat">±${s.vol_weekly == null ? "–" : (s.vol_weekly * 100).toFixed(1) + "%"}</span>`
+          : state.sort === "vol_chg_4w" ? `<span class="flat">물량</span>${delta(s.vol_chg_4w, 0)}` : "";
         return rowHTML(s).replace(`<div class="s">`, `<div class="s">${extra}`).replace(`</div></div>\n    </a>`, `</div></div>\n    </a>`)
           .replace(`<div class="meta">`, `<div class="meta">${s.stale_days > 14 ? "조사 중단 · " : ""}`);
       }).join("") : `<div class="empty"><b>찾는 품목이 없어요</b>다른 이름이나 부류로 찾아보세요.</div>`;
@@ -539,6 +555,8 @@ main { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
           <div class="range-l"><span>최저 <b class="num">${won(d.range_1y.low)}</b></span><span>최고 <b class="num">${won(d.range_1y.high)}</b></span></div></div>` : ""}
       </section>
 
+      ${d.wholesale ? wholesaleCard(d.wholesale) : ""}
+
       ${season ? `<section class="card">
         <div class="sec-h"><h2>월별 가격 흐름</h2><span class="sub">${esc(season.source)} 기준 · 연평균 100</span></div>
         <div class="months" role="img" aria-label="월별 가격 지수, ${season.peak_month}월이 가장 비싸고 ${season.low_month}월이 가장 쌈">
@@ -571,7 +589,67 @@ main { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
       app.querySelectorAll("[data-rg]").forEach(x => x.setAttribute("aria-pressed", x === b)); draw();
     });
     draw();
+    if (d.wholesale) drawWholesale(d.wholesale);
     window.scrollTo(0, 0);
+  }
+
+  // ---------- 도매시장(가락) 경락가·반입량 ----------
+  const tons = kg => kg == null ? "–" : kg >= 1e5 ? (kg / 1000).toFixed(0) + "톤" : kg >= 1000 ? (kg / 1000).toFixed(1) + "톤" : Math.round(kg) + "kg";
+  function wholesaleCard(w) {
+    return `<section class="card">
+      <div class="sec-h"><h2>가락시장 경매</h2><span class="sub">${esc(w.item_nm)} · ${fmtDate(w.date)} 정산</span></div>
+      <div class="metrics">
+        <div class="metric"><div class="k">경락가 (kg당)</div><div class="v">${won(w.price_kg)}원</div><div class="d">1주 전보다 ${delta(w.price_kg_chg_1w)}</div></div>
+        <div class="metric"><div class="k">반입량 (최근 5일 하루 평균)</div><div class="v">${tons(w.kg_avg_5d)}</div>
+          <div class="d">4주 평균보다 ${delta(w.vol_chg_4w, 0)}${w.vol_chg_yoy != null ? ` · 작년보다 ${delta(w.vol_chg_yoy, 0)}` : ""}</div></div>
+      </div>
+      <div class="k flat" style="font-size:12px;margin:16px 0 2px">kg당 경락가 · 최근 3개월</div>
+      <div class="chart-wrap" id="whp"></div>
+      <div class="k flat" style="font-size:12px;margin:12px 0 2px">하루 반입량 · 최근 3개월</div>
+      <div class="chart-wrap" id="whv"></div>
+      <div class="legend"><span><i style="border-color:var(--fg)"></i>경락가</span><span><i class="band" style="background:var(--normal);opacity:.55"></i>반입량</span><span><i style="border-color:var(--accent);border-top-style:dashed"></i>4주 평균 반입량</span></div>
+      <p class="hint">경매 낙찰가를 물량으로 가중 평균했어요. 개·단처럼 무게로 바꿀 수 없는 거래는 빠져요.</p>
+    </section>`;
+  }
+  function drawWholesale(w) {
+    const H = w.history, n = H.dates.length, st = Math.max(0, n - 60);
+    const dates = H.dates.slice(st), px = H.price_kg.slice(st), kg = H.kg.slice(st);
+    const avg = kg.map((_, i) => i < 19 ? null : kg.slice(i - 19, i + 1).reduce((a, b) => a + b, 0) / 20);
+    miniChart(document.getElementById("whp"), dates, px, null, "line", v => won(v) + "원/kg");
+    miniChart(document.getElementById("whv"), dates, kg, avg, "bar", v => tons(v));
+  }
+  function miniChart(el, dates, vals, line2, kind, fmt) {
+    if (!el) return;
+    const N = vals.length, W = Math.max(280, el.clientWidth), Ht = 120, m = { l: 6, r: 46, t: 8, b: 20 };
+    const all = vals.concat(line2 || []).filter(v => v != null);
+    let lo = kind === "bar" ? 0 : Math.min(...all), hi = Math.max(...all);
+    const ticks = niceTicks(lo, hi, 3); lo = kind === "bar" ? 0 : Math.min(lo, ticks[0]); hi = Math.max(hi, ticks[ticks.length - 1]);
+    const bw = (W - m.l - m.r) / N;
+    const x = i => m.l + bw * (i + .5), y = v => m.t + (1 - (v - lo) / (hi - lo || 1)) * (Ht - m.t - m.b);
+    let s = `<svg viewBox="0 0 ${W} ${Ht}" height="${Ht}" role="img" aria-label="${kind === "bar" ? "반입량" : "경락가"} 추이">`;
+    ticks.forEach(t => { if (t < lo || t > hi) return; s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)" ${t === ticks[0] ? "" : 'stroke-dasharray="2 4"'}/><text x="${W - m.r + 6}" y="${y(t) + 3.5}">${kind === "bar" ? tons(t) : shortWon(t)}</text>`; });
+    let lastM = "";
+    dates.forEach((d, i) => { const mm = d.slice(5, 7); if (mm !== lastM) { if (lastM && i > 2 && i < N - 3) s += `<text x="${x(i)}" y="${Ht - 4}" text-anchor="middle">${+mm}월</text>`; lastM = mm; } });
+    if (kind === "bar") {
+      vals.forEach((v, i) => { if (v == null) return; const h = Math.max(1, y(lo) - y(v)); s += `<rect x="${(x(i) - bw * .36).toFixed(1)}" y="${(y(lo) - h).toFixed(1)}" width="${Math.max(1, bw * .72).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="${i >= N - 5 ? "var(--fg-2)" : "var(--normal)"}" opacity="${i >= N - 5 ? .9 : .55}"/>`; });
+      if (line2) { let p = ""; line2.forEach((v, i) => { if (v != null) p += (p ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1); }); s += `<path d="${p}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="5 3"/>`; }
+    } else {
+      let p = ""; vals.forEach((v, i) => { if (v != null) p += (p ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1); });
+      s += `<path d="${p}" fill="none" stroke="var(--fg)" stroke-width="2" stroke-linejoin="round"/>`;
+      const li = N - 1; if (vals[li] != null) s += `<circle cx="${x(li)}" cy="${y(vals[li])}" r="4" fill="var(--fg)" stroke="var(--surface)" stroke-width="2"/>`;
+    }
+    s += `<line class="hl" y1="${m.t}" y2="${Ht - m.b}" stroke="var(--fg-2)" style="display:none"/><rect x="0" y="0" width="${W}" height="${Ht}" fill="transparent" class="hit"/></svg><div class="tip" hidden></div>`;
+    el.innerHTML = s;
+    const hit = el.querySelector(".hit"), hl = el.querySelector(".hl"), tip = el.querySelector(".tip");
+    const show = ev => {
+      const r = el.getBoundingClientRect(), sx = (ev.clientX - r.left) * (W / r.width);
+      const i = Math.max(0, Math.min(N - 1, Math.floor((sx - m.l) / bw)));
+      hl.style.display = ""; hl.setAttribute("x1", x(i)); hl.setAttribute("x2", x(i));
+      tip.hidden = false; tip.innerHTML = `${fmtDate(dates[i], true)}<br><b>${vals[i] == null ? "–" : fmt(vals[i])}</b>`;
+      tip.style.left = Math.max(56, Math.min(r.width - 56, x(i) * r.width / W)) + "px"; tip.style.top = "-6px";
+    };
+    hit.addEventListener("pointermove", show); hit.addEventListener("pointerdown", show);
+    hit.addEventListener("pointerleave", () => { hl.style.display = "none"; tip.hidden = true; });
   }
 
   // ---------- 차트 (SVG, 손으로 그림: 예측 범위·평년선·구간 끊김 처리) ----------
@@ -653,7 +731,11 @@ main { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
     hit.addEventListener("pointerleave", hide);
     resizeChart = () => document.body.contains(el) && drawChart(el, d, nRange);
   }
-  let rT; window.addEventListener("resize", () => { clearTimeout(rT); rT = setTimeout(() => resizeChart && resizeChart(), 150); });
+  let rT; window.addEventListener("resize", () => { clearTimeout(rT); rT = setTimeout(() => {
+    resizeChart && resizeChart();
+    const id = location.hash.startsWith("#item-") && location.hash.slice(6), d = id && state.cache.get(`series/${id}.json`);
+    if (d && d.wholesale) drawWholesale(d.wholesale);
+  }, 150); });
 
   function niceTicks(lo, hi, count) {
     const span = hi - lo || hi || 1, raw = span / count, p = Math.pow(10, Math.floor(Math.log10(raw)));
@@ -675,6 +757,8 @@ main { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
       <section class="card method">
         <h3>데이터</h3>
         <p>한국농수산식품유통공사 KAMIS가 매일 조사하는 도매·소매 가격을 영업일마다 자동으로 모아요. 품목·품종·등급(상품/중품)별로 따로 분석하고, 조사 단위가 바뀌면 바뀐 뒤 자료만 써요.</p>
+        <h3>가락시장 경락가와 반입량</h3>
+        <p>공영도매시장 경매 기록을 매일 받아 품목별로 묶어요. 경락가는 kg당 낙찰가를 물량으로 가중 평균한 값이고, 반입량은 그날 경매된 총 무게예요. 최근 5일 평균 물량이 4주 평균보다 20% 넘게 많거나 적으면 출하 판단 근거에 함께 표시해요.</p>
         <h3>평균과 변동성</h3>
         <ul><li><b>20일 평균</b>: 최근 20영업일(약 한 달) 평균 가격</li>
           <li><b>평년</b>: KAMIS가 제공하는 최근 5년 같은 시기 평균(최고·최저 제외)</li>

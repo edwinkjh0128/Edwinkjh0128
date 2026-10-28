@@ -94,3 +94,70 @@ def collect_recent(client: KamisClient, store: Store, today: date, lookback_days
             continue
         total.merge(collect_day(client, store, day, done=done, force=back <= 1))
     return total
+
+
+# --------------------------------------------------------------------------
+# 도매시장 경매(경락가·반입량)
+# --------------------------------------------------------------------------
+def collect_wholesale(client, store: Store, start: date, end: date, markets,
+                      *, refresh_recent: int = 1, max_calls: int = 8000,
+                      stop_after_empty: int = 15) -> CollectSummary:
+    """start~end 경매일을 시장별로 수집해 일별 품목 집계로 저장.
+
+    - 일요일은 휴장이라 건너뜀
+    - 최근 refresh_recent일은 정정 반영을 위해 항상 다시 받음
+    - max_calls: 일일 호출 한도(개발계정 10,000회) 보호
+    - 과거로 갈수록 연속 stop_after_empty일 데이터가 없으면 '과거 자료 미제공'으로 보고 중단
+    """
+    from .wholesale import WholesaleAuthError, WholesaleError, WholesaleQuotaError, aggregate
+
+    s = CollectSummary()
+    done = store.wholesale_done()
+    days = []
+    d = end
+    while d >= start:
+        if d.weekday() != 6:
+            days.append(d)
+        d -= timedelta(days=1)
+    for market in markets:
+        empty_run = 0
+        floor = store.get_meta(f"wh_floor:{market}")  # 이 날짜 이전은 자료 없음(이전 실행에서 확인)
+        for day in days:  # 최근 → 과거
+            if floor and day.isoformat() <= floor:
+                break
+            key = (day.isoformat(), market)
+            fresh = (end - day).days < refresh_recent
+            if key in done and not fresh:
+                s.skipped += 1
+                continue
+            if client.calls >= max_calls:
+                log.warning("도매시장: 호출 한도 보호로 중단(%d회). 다음 실행 때 이어서 받습니다.", client.calls)
+                return s
+            s.requests += 1
+            try:
+                lots = client.day_lots(day, market)
+            except WholesaleAuthError:
+                raise
+            except WholesaleQuotaError as e:
+                log.warning("도매시장: %s — 다음 실행 때 이어서 받습니다.", e)
+                s.errors.append(str(e))
+                return s
+            except WholesaleError as e:
+                s.errors.append(f"{day} {market}: {e}")
+                store.log_wholesale(day, market, "error", 0, str(e))
+                continue
+            aggs = aggregate(lots, day, market)
+            store.replace_wholesale_day(day, market, aggs)
+            store.log_wholesale(day, market, "ok" if lots else "empty", len(lots))
+            s.rows += len(aggs)
+            if lots:
+                empty_run = 0
+            else:
+                s.empty += 1
+                empty_run += 1
+                # 공휴일 연휴(설·추석)는 최대 5일 정도라 15일 연속 빈 날은 과거 자료 없음으로 판단
+                if empty_run >= stop_after_empty and (end - day).days > 30:
+                    log.info("도매시장 %s: %s 이전 자료는 제공되지 않는 것으로 보고 중단", market, day)
+                    store.set_meta(f"wh_floor:{market}", day.isoformat())
+                    break
+    return s

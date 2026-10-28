@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
@@ -142,7 +143,7 @@ class DemoMarket:
             normal_level = season * 0.9 + s.trend * (t_years - t_years[-1] - 2.5)
             normal_noise = np.convolve(rng.normal(0, 0.03, n), np.ones(15) / 15, mode="same")
             self.paths[s.code] = {
-                "w": wholesale, "r": retail,
+                "w": wholesale, "r": retail, "s": season + trend,
                 "nw": normal_level + normal_noise, "nr": 0.65 * normal_level + normal_noise * 0.6,
             }
 
@@ -215,3 +216,84 @@ class DemoTransport:
         if not items:
             return {"condition": [params], "data": ["001"]}
         return {"condition": [params], "data": {"error_code": "000", "item": items}}
+
+
+# --------------------------------------------------------------------------
+# 도매시장 경매(trades2) 데모
+# --------------------------------------------------------------------------
+WH_NAMES = {"파": "대파", "깐마늘(국산)": "깐마늘", "물오징어": "오징어", "호박": "애호박"}
+WH_LCLSF = {"100": ("05", "서류"), "200": ("10", "엽경채류"), "400": ("06", "과실류"),
+            "600": ("71", "선어")}
+WH_BASE_TONS = {"배추": 900, "무": 600, "양파": 500, "대파": 180, "사과": 260, "감자": 220,
+                "고구마": 120, "양배추": 260, "당근": 140, "오이": 90, "애호박": 70,
+                "토마토": 110, "상추": 30, "시금치": 25, "깻잎": 18, "풋고추": 40,
+                "파프리카": 60, "방울토마토": 70, "배": 150, "감귤": 300, "포도": 90,
+                "딸기": 80, "바나나": 200, "생강": 10, "깐마늘": 20, "건고추": 8,
+                "고등어": 40, "오징어": 25, "쌀": 0, "콩": 0}
+
+
+def _pkg_kg(unit: str) -> float | None:
+    m = re.match(r"\s*([\d.]+)\s*kg", unit or "")
+    return float(m.group(1)) if m else None
+
+
+class DemoWholesaleTransport:
+    """data.go.kr katRealTime2/trades2 와 같은 형식의 가짜 응답(서울가락만)."""
+
+    def __init__(self, market: DemoMarket) -> None:
+        self.m = market
+        self.calls = 0
+        self._cache: dict[date, list[dict]] = {}
+
+    def _lots(self, d: date) -> list[dict]:
+        if d in self._cache:
+            return self._cache[d]
+        m = self.m
+        out: list[dict] = []
+        if _is_survey_day(d) or (d.weekday() == 5 and d not in HOLIDAYS):
+            i = m.index.get(d)
+            for s in SPECS:
+                name = WH_NAMES.get(s.name, s.name)
+                tons = WH_BASE_TONS.get(name, 0)
+                kg_each = _pkg_kg(s.w_unit or "")
+                if i is None or not tons or not kg_each or not m.in_season(s, d) or s.cat not in WH_LCLSF:
+                    continue
+                rng = np.random.default_rng(int(s.code) * 1_000_003 + d.toordinal())
+                p = m.paths[s.code]
+                # 물량은 가격과 반대로 움직인다: 계절 대비 가격이 높을수록 반입이 적음
+                factor = math.exp(-1.3 * (p["w"][i] - p["s"][i]) + rng.normal(0, 0.12))
+                if d.weekday() == 0:
+                    factor *= 1.25  # 월요일은 주말 물량이 몰림
+                total_kg = tons * 1000 * factor
+                per_kg = m.price(s, "02", 1.0, d) / kg_each
+                n = int(rng.integers(25, 60))
+                l_cd, l_nm = WH_LCLSF[s.cat]
+                for _ in range(n):
+                    qty = max(1, int(total_kg / n / kg_each * rng.uniform(0.5, 1.5)))
+                    out.append({
+                        "trd_clcln_ymd": d.isoformat(), "whsl_mrkt_cd": "110001",
+                        "whsl_mrkt_nm": "서울가락", "gds_lclsf_cd": l_cd, "gds_lclsf_nm": l_nm,
+                        "gds_mclsf_cd": s.code[-2:], "gds_mclsf_nm": name,
+                        "gds_sclsf_nm": s.kind, "unit_nm": "kg", "unit_qty": f"{kg_each:g}",
+                        "qty": str(qty),
+                        "scsbd_prc": str(int(round(per_kg * kg_each * rng.lognormal(0, 0.12), -1))),
+                    })
+                # 무게 단위가 아닌 거래도 섞여 온다(집계에서 제외되어야 함)
+                out.append({**out[-1], "unit_nm": "개", "unit_qty": "1"})
+        self._cache = {d: out}
+        return out
+
+    def __call__(self, params: dict[str, str]) -> dict[str, Any]:
+        self.calls += 1
+        if not params.get("serviceKey"):
+            return {"response": {"header": {"resultCode": "30", "resultMsg": "SERVICE_KEY_IS_NOT_REGISTERED_ERROR"}}}
+        d = date.fromisoformat(params["cond[trd_clcln_ymd::EQ]"])
+        if params.get("cond[whsl_mrkt_cd::EQ]") != "110001" or d > self.m.end or d < self.m.start:
+            lots: list[dict] = []
+        else:
+            lots = self._lots(d)
+        page, size = int(params.get("pageNo", 1)), int(params.get("numOfRows", 10))
+        chunk = lots[(page - 1) * size: page * size]
+        return {"response": {"header": {"resultCode": "00", "resultMsg": "NORMAL SERVICE"},
+                             "body": {"items": {"item": chunk}, "numOfRows": size,
+                                      "pageNo": page, "totalCount": len(lots)}}}

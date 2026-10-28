@@ -4,6 +4,8 @@
 #  1) Secrets and variables > Actions > New repository secret
 #       KAMIS_CERT_KEY = KAMIS에서 발급받은 인증키
 #       KAMIS_CERT_ID  = KAMIS 회원 아이디
+#       DATA_GO_KR_KEY = 공공데이터포털 '전국 공영도매시장 실시간 경매정보' 일반 인증키(Decoding)
+#                        (없으면 도매시장 경락가·반입량만 빠지고 나머지는 정상 동작)
 #  2) Pages > Build and deployment > Source: GitHub Actions
 #  3) 처음 한 번: Actions 탭 > "가격 수집·배포" > Run workflow 에서 backfill_days=730 으로 실행
 #
@@ -37,6 +39,7 @@ jobs:
     env:
       KAMIS_CERT_KEY: ${{ secrets.KAMIS_CERT_KEY }}
       KAMIS_CERT_ID: ${{ secrets.KAMIS_CERT_ID }}
+      DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
       FARMSIGNAL_DB: pipeline/data/farmsignal.sqlite3
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -67,6 +70,14 @@ jobs:
       - name: 오늘 수집
         working-directory: pipeline
         run: python -m farmsignal collect
+
+      - name: 도매시장 경락가·반입량 수집
+        # 공공데이터포털 장애가 KAMIS 시세 배포를 막지 않도록 실패해도 계속 진행
+        continue-on-error: true
+        working-directory: pipeline
+        # 받은 날은 건너뛰므로 매일 730일 범위를 줘도 새 날짜만 호출한다.
+        # 과거분이 많아 실행당 4,500회(하루 2회 실행 = 개발계정 한도 10,000회 이내)를 넘으면 다음 실행 때 이어서 채운다.
+        run: python -m farmsignal wholesale --days 730 --max-calls 4500
 
       - name: 분석·내보내기
         working-directory: pipeline
